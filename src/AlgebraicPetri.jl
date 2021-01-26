@@ -6,7 +6,7 @@ export TheoryPetriNet, PetriNet, OpenPetriNetOb, AbstractPetriNet, ns, nt, ni, n
   add_species!, add_transition!, add_transitions!,
   add_input!, add_inputs!, add_output!, add_outputs!, inputs, outputs,
   TransitionMatrices, vectorfield,
-  TheoryLabelledPetriNet, LabelledPetriNet, AbstractLabelledPetriNet, sname, tname,
+  TheoryLabelledPetriNet, LabelledPetriNet, AbstractLabelledPetriNet, sname, tname, snames, tnames,
   TheoryReactionNet, ReactionNet, AbstractReactionNet, concentration, concentrations, rate, rates,
   TheoryLabelledReactionNet, LabelledReactionNet, AbstractLabelledReactionNet,
   Open, OpenPetriNet, OpenLabelledPetriNet, OpenReactionNet, OpenLabelledReactionNet,
@@ -85,6 +85,9 @@ add_outputs!(p::AbstractPetriNet,n,t,s;kw...) = add_parts!(p,:O,n;ot=t,os=s,kw..
 
 sname(p::AbstractPetriNet,s) = (1:ns(p))[s]
 tname(p::AbstractPetriNet,t) = (1:nt(p))[t]
+
+snames(p::AbstractPetriNet) = map(s->sname(p, s), 1:ns(p))
+tnames(p::AbstractPetriNet) = map(s->tname(p, s), 1:nt(p))
 
 # Note: although indexing makes this pretty fast, it is often faster to bulk-convert
 # the PetriNet net into a transition matrix, if you are working with all of the transitions
