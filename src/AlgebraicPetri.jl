@@ -20,7 +20,7 @@ using Catlab.Theories
 using Petri
 using LabelledArrays
 using LinearAlgebra: mul!
-import Petri: Model, Graph, vectorfield 
+import Petri: Model, Graph, vectorfield
 
 vectorify(n::Vector) = n
 vectorify(n::Tuple) = length(n) == 1 ? [n] : n
@@ -132,7 +132,7 @@ vectorfield(pn::AbstractPetriNet) = begin
   rates = zeros(Float64,nt(pn))
   f(du,u,p,t) = begin
     if eltype(du) != Float64
-      rates = zeros(du, nt(pn))
+      rates = zeros(eltype(du), nt(pn))
     end
     u_m = [u[sname(pn, i)] for i in 1:ns(pn)]
     p_m = [p[tname(pn, i)] for i in 1:nt(pn)]
