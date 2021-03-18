@@ -18,6 +18,8 @@ using Catlab.CategoricalAlgebra.FinSets
 using Catlab.Present
 using Catlab.Theories
 using Petri
+
+using Requires
 using LabelledArrays
 using LinearAlgebra: mul!
 import Petri: Model, Graph, vectorfield 
@@ -362,5 +364,9 @@ end
 include("visualization.jl")
 include("Epidemiology.jl")
 
+
+function __init__()
+  @require Catalyst="479239e8-5488-4da2-87a7-35f2df7eef83" include("CatalystInterop.jl")
+end
 
 end
