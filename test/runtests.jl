@@ -1,6 +1,6 @@
 using Test
 
-using Petri
+import Petri
 using LabelledArrays
 using AlgebraicPetri
 using AlgebraicPetri.Epidemiology
@@ -8,6 +8,7 @@ using Catlab.Theories
 using Catlab.Present
 using Catlab.CategoricalAlgebra
 using Catlab.CategoricalAlgebra.FinSets
+using Catlab.Programs
 
 @testset "Core" begin
     include("core.jl")

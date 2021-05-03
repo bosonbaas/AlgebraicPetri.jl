@@ -6,7 +6,7 @@ export TheoryPetriNet, PetriNet, OpenPetriNetOb, AbstractPetriNet, ns, nt, ni, n
   add_species!, add_transition!, add_transitions!,
   add_input!, add_inputs!, add_output!, add_outputs!, inputs, outputs,
   TransitionMatrices, vectorfield,
-  TheoryLabelledPetriNet, LabelledPetriNet, AbstractLabelledPetriNet, sname, tname,
+  TheoryLabelledPetriNet, LabelledPetriNet, AbstractLabelledPetriNet, sname, tname, snames, tnames,
   TheoryReactionNet, ReactionNet, AbstractReactionNet, concentration, concentrations, rate, rates,
   TheoryLabelledReactionNet, LabelledReactionNet, AbstractLabelledReactionNet,
   Open, OpenPetriNet, OpenLabelledPetriNet, OpenReactionNet, OpenLabelledReactionNet,
@@ -17,10 +17,8 @@ using Catlab.CategoricalAlgebra
 using Catlab.CategoricalAlgebra.FinSets
 using Catlab.Present
 using Catlab.Theories
-using Petri
 using LabelledArrays
 using LinearAlgebra: mul!
-import Petri: Model, Graph, vectorfield 
 
 vectorify(n::Vector) = n
 vectorify(n::Tuple) = length(n) == 1 ? [n] : n
@@ -47,11 +45,13 @@ const AbstractPetriNet = AbstractACSetType(TheoryPetriNet)
 const PetriNet = CSetType(TheoryPetriNet,index=[:it,:is,:ot,:os])
 const OpenPetriNetOb, OpenPetriNet = OpenCSetTypes(PetriNet,:S)
 
-Open(n, p::AbstractPetriNet, m) = OpenPetriNet(p, FinFunction(n, ns(p)), FinFunction(m, ns(p)))
+Open(p::AbstractPetriNet) = OpenPetriNet(p, map(x->FinFunction([x], ns(p)), 1:ns(p))...)
+Open(p::AbstractPetriNet, legs...) = OpenPetriNet(p, map(l->FinFunction(l, ns(p)), legs)...)
+Open(n, p::AbstractPetriNet, m) = Open(p, n, m)
 
 # PetriNet([:S, :I, :R], :infection=>((1, 2), 3))
 
-PetriNet(n,ts...) = begin
+PetriNet(n::Int, ts::Vararg{Union{Pair,Tuple}}) = begin
   p = PetriNet()
   add_species!(p, n)
   add_transitions!(p, length(ts))
@@ -83,6 +83,9 @@ add_outputs!(p::AbstractPetriNet,n,t,s;kw...) = add_parts!(p,:O,n;ot=t,os=s,kw..
 
 sname(p::AbstractPetriNet,s) = (1:ns(p))[s]
 tname(p::AbstractPetriNet,t) = (1:nt(p))[t]
+
+snames(p::AbstractPetriNet) = map(s->sname(p, s), 1:ns(p))
+tnames(p::AbstractPetriNet) = map(t->tname(p, t), 1:nt(p))
 
 # Note: although indexing makes this pretty fast, it is often faster to bulk-convert
 # the PetriNet net into a transition matrix, if you are working with all of the transitions
@@ -123,10 +126,17 @@ valueat(f::Function, u, t) = try f(u,t) catch e f(t) end
 
 vectorfield(pn::AbstractPetriNet) = begin
   tm = TransitionMatrices(pn)
-  dt_T = transpose(tm.output - tm.input)
+  dt = tm.output - tm.input
   f(du,u,p,t) = begin
-    log_rates = log.(map(i->valueat(i,u,t), p)) .+ tm.input * [i <= 0 ? 0 : log(i) for i in u]
-    mul!(du, dt_T, exp.(log_rates))
+    rates = zeros(eltype(du),nt(pn))
+    u_m = [u[sname(pn, i)] for i in 1:ns(pn)]
+    p_m = [p[tname(pn, i)] for i in 1:nt(pn)]
+    for i in 1:nt(pn)
+      rates[i] = valueat(p_m[i],u,t) * prod(u_m[j] ^ tm.input[i,j] for j in 1:ns(pn))
+    end
+    for j in 1:ns(pn)
+      du[sname(pn, j)] = sum(rates[i] * dt[i,j] for i in 1:nt(pn))
+    end
     return du
   end
   return f
@@ -145,12 +155,14 @@ const LabelledPetriNet = LabelledPetriNetUntyped{Symbol}
 const OpenLabelledPetriNetObUntyped, OpenLabelledPetriNetUntyped = OpenACSetTypes(LabelledPetriNetUntyped,:S)
 const OpenLabelledPetriNetOb, OpenLabelledPetriNet = OpenLabelledPetriNetObUntyped{Symbol}, OpenLabelledPetriNetUntyped{Symbol}
 
-Open(n, p::AbstractLabelledPetriNet, m) = begin
+Open(p::AbstractLabelledPetriNet) = OpenLabelledPetriNet(p, map(x->FinFunction([x], ns(p)), 1:ns(p))...)
+Open(p::AbstractLabelledPetriNet, legs...) = begin
   s_idx = Dict(sname(p, s)=>s for s in 1:ns(p))
-  OpenLabelledPetriNet(p, FinFunction(map(i->s_idx[i], n), ns(p)), FinFunction(map(i->s_idx[i], m), ns(p)))
+  OpenLabelledPetriNet(p, map(l->FinFunction(map(i->s_idx[i], l), ns(p)),legs)...)
 end
+Open(n, p::AbstractLabelledPetriNet, m) = Open(p, n, m)
 
-LabelledPetriNet(n,ts...) = begin
+LabelledPetriNet(n, ts::Vararg{Union{Pair,Tuple}}) = begin
   p = LabelledPetriNet()
   n = vectorify(n)
   state_idx = state_dict(n)
@@ -180,9 +192,11 @@ const AbstractReactionNet = AbstractACSetType(TheoryReactionNet)
 const ReactionNet = ACSetType(TheoryReactionNet, index=[:it,:is,:ot,:os])
 const OpenReactionNetOb, OpenReactionNet = OpenACSetTypes(ReactionNet,:S)
 
-Open(n, p::AbstractReactionNet{R,C}, m) where {R,C} = OpenReactionNet{R,C}(p, FinFunction(n, ns(p)), FinFunction(m, ns(p)))
+Open(p::AbstractReactionNet{R,C}) where {R,C} = OpenReactionNet{R,C}(p, map(x->FinFunction([x], ns(p)), 1:ns(p))...)
+Open(p::AbstractReactionNet{R,C}, legs...) where {R,C} = OpenReactionNet{R,C}(p, map(l->FinFunction(l, ns(p)), legs)...)
+Open(n, p::AbstractReactionNet, m) = Open(p, n, m)
 
-ReactionNet{R,C}(n,ts...) where {R,C} = begin
+ReactionNet{R,C}(n, ts::Vararg{Union{Pair,Tuple}}) where {R,C} = begin
   p = ReactionNet{R,C}()
   add_species!(p, length(n), concentration=n)
   for (i, (rate,(ins,outs))) in enumerate(ts)
@@ -215,13 +229,15 @@ const OpenLabelledReactionNetObUntyped, OpenLabelledReactionNetUntyped = OpenACS
 const OpenLabelledReactionNetOb{R,C} = OpenLabelledReactionNetObUntyped{R,C,Symbol}
 const OpenLabelledReactionNet{R,C} = OpenLabelledReactionNetUntyped{R,C,Symbol}
 
-Open(n, p::AbstractLabelledReactionNet{R,C}, m) where {R,C} = begin
+Open(p::AbstractLabelledReactionNet{R,C}) where {R,C} = OpenLabelledReactionNet{R,C}(p, map(x->FinFunction([x], ns(p)), 1:ns(p))...)
+Open(p::AbstractLabelledReactionNet{R,C}, legs...) where {R,C} = begin
   s_idx = Dict(sname(p, s)=>s for s in 1:ns(p))
-  OpenLabelledReactionNet{R,C}(p, FinFunction(map(i->s_idx[i], n), ns(p)), FinFunction(map(i->s_idx[i], m), ns(p)))
+  OpenLabelledReactionNet{R,C}(p, map(l->FinFunction(map(i->s_idx[i], l), ns(p)), legs)...)
 end
+Open(n, p::AbstractLabelledReactionNet, m) = Open(p, n, m)
 
 # Ex. LabelledReactionNet{Number, Int}((:S=>990, :I=>10, :R=>0), (:inf, .3/1000)=>((:S, :I)=>(:I,:I)), (:rec, .2)=>(:I=>:R))
-LabelledReactionNet{R,C}(n,ts...) where {R,C} = begin
+LabelledReactionNet{R,C}(n, ts::Vararg{Union{Pair,Tuple}}) where {R,C} = begin
   p = LabelledReactionNet{R,C}()
   n = vectorify(n)
   states = map(first, collect(n))
@@ -241,41 +257,70 @@ end
 sname(p::Union{AbstractLabelledPetriNet, AbstractLabelledReactionNet},s) = subpart(p,s,:sname)
 tname(p::Union{AbstractLabelledPetriNet, AbstractLabelledReactionNet},t) = subpart(p,t,:tname)
 
-vectorfield(pn::Union{AbstractLabelledPetriNet,AbstractLabelledReactionNet}) = begin
-  tm = TransitionMatrices(pn)
-  dt_T = transpose(tm.output - tm.input)
-  f(du,u,p,t) = begin
-    u_m = [u[sname(pn, i)] for i in 1:ns(pn)]
-    p_m = [p[tname(pn, i)] for i in 1:nt(pn)]
-    log_rates = log.(map(i->valueat(i,u,t), p_m)) .+ tm.input * [i <= 0 ? 0 : log(i) for i in u_m]
-    new_du = dt_T * exp.(log_rates)
-    for s in 1:ns(pn)
-      du[sname(pn, s)] = new_du[s]
-    end
-    return du
+# Interoperability between different types
+
+PetriNet(pn::AbstractPetriNet) = begin
+  pn′ = PetriNet()
+  copy_parts!(pn′, pn)
+  pn′
+end
+
+LabelledPetriNet(pn::Union{AbstractLabelledPetriNet, AbstractLabelledReactionNet}) = begin
+  pn′ = LabelledPetriNet()
+  copy_parts!(pn′, pn)
+  pn′
+end
+
+LabelledPetriNet(pn::AbstractPetriNet, snames, tnames) = begin
+  pn′ = LabelledPetriNet()
+  copy_parts!(pn′, pn)
+  map(k->set_subpart!(pn′, k, :sname, snames[k]), keys(snames))
+  map(k->set_subpart!(pn′, k, :tname, tnames[k]), keys(tnames))
+  pn′
+end
+
+ReactionNet{R,C}(pn::Union{AbstractReactionNet, AbstractLabelledReactionNet}) where {R, C} = begin
+  pn′ = ReactionNet{R,C}()
+  copy_parts!(pn′, pn)
+  pn′
+end
+
+ReactionNet{R,C}(pn::AbstractPetriNet, concentrations, rates) where {R, C} = begin
+  pn′ = ReactionNet{R,C}()
+  copy_parts!(pn′, pn)
+  map(k->set_subpart!(pn′, k, :concentration, concentrations[k]), keys(concentrations))
+  map(k->set_subpart!(pn′, k, :rate, rates[k]), keys(rates))
+  pn′
+end
+
+LabelledReactionNet{R,C}(pn::AbstractLabelledReactionNet) where {R, C} = begin
+  pn′ = LabelledReactionNet{R,C}()
+  copy_parts!(pn′, pn)
+  pn′
+end
+
+LabelledReactionNet{R,C}(pn::AbstractPetriNet, s_labels, t_labels, concentrations, rates) where {R, C} = begin
+  pn′ = LabelledReactionNet{R,C}()
+  copy_parts!(pn′, pn)
+  map(k->set_subpart!(pn′, k, :sname, s_labels[k]), keys(s_labels))
+  map(k->set_subpart!(pn′, k, :tname, t_labels[k]), keys(t_labels))
+  map(k->set_subpart!(pn′, k, :concentration, concentrations[k]), keys(concentrations))
+  map(k->set_subpart!(pn′, k, :rate, rates[k]), keys(rates))
+  pn′
+end
+
+LabelledReactionNet{R,C}(pn::Union{AbstractPetriNet}, states, transitions) where {R, C} = begin
+  pn′ = LabelledReactionNet{R,C}()
+  copy_parts!(pn′, pn)
+  for (i, (k, v)) in enumerate(states)
+    set_subpart!(pn′, i, :sname, k)
+    set_subpart!(pn′, i, :concentration, v)
   end
-  return f
-end
-
-# Interoperability with Petri.jl
-Petri.Model(p::AbstractPetriNet) = begin
-  ts = TransitionMatrices(p)
-  t_in = map(i->Dict(k=>v for (k,v) in enumerate(ts.input[i,:]) if v != 0), 1:nt(p))
-  t_out = map(i->Dict(k=>v for (k,v) in enumerate(ts.output[i,:]) if v != 0), 1:nt(p))
-
-  Δ = Dict(i=>t for (i,t) in enumerate(zip(t_in, t_out)))
-  return Petri.Model(ns(p), Δ)
-end
-
-Petri.Model(p::Union{AbstractLabelledPetriNet, AbstractLabelledReactionNet}) = begin
-  snames = [sname(p, s) for s in 1:ns(p)]
-  tnames = [tname(p, t) for t in 1:nt(p)]
-  ts = TransitionMatrices(p)
-  t_in = map(i->LVector(;[(snames[k]=>v) for (k,v) in enumerate(ts.input[i,:]) if v != 0]...), 1:nt(p))
-  t_out = map(i->LVector(;[(snames[k]=>v) for (k,v) in enumerate(ts.output[i,:]) if v != 0]...), 1:nt(p))
-
-  Δ = LVector(;[(tnames[i]=>t) for (i,t) in enumerate(zip(t_in, t_out))]...)
-  return Petri.Model(collect(values(snames)), Δ)
+  for (i, (k, v)) in enumerate(transitions)
+    set_subpart!(pn′, i, :tname, k)
+    set_subpart!(pn′, i, :rate, v)
+  end
+  pn′
 end
 
 concentration(p::AbstractLabelledReactionNet,s) = subpart(p,s,:concentration)
@@ -291,6 +336,7 @@ rates(p::AbstractLabelledReactionNet) = begin
   LVector(;[(tnames[t]=>rate(p, t)) for t in 1:nt(p)]...)
 end
 
+include("interoperability.jl")
 include("visualization.jl")
 include("Epidemiology.jl")
 
