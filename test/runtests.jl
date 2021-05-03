@@ -24,3 +24,7 @@ end
 @testset "Epidemiology" begin
     include("epidemiology.jl")
 end
+
+@testset "Catalyst Tooling" begin
+  include("CatalystInterop.jl")
+end
